@@ -261,20 +261,37 @@ pub(crate) fn gif_draw_rectangle(
     d: c_int,
     color: c_int,
 ) {
-    if x < 0 || y < 0 || w <= 0 || d <= 0 {
+    if w <= 0 || d <= 0 {
         return;
     }
-    let width = image.ImageDesc.Width as usize;
-    let raster = image.raster_bits_mut();
-    let Some(bp) = width.checked_mul(y as usize).and_then(|v| v.checked_add(x as usize)) else {
+    let width = image.ImageDesc.Width.max(0) as usize;
+    let height = image.ImageDesc.Height.max(0) as usize;
+    let x0 = x.max(0) as usize;
+    let y0 = y.max(0) as usize;
+    let x1 = if x >= 0 && x0 < width {
+        (x0 + w as usize).min(width)
+    } else if x < 0 && w as usize > x.unsigned_abs() as usize {
+        (w as usize - x.unsigned_abs() as usize).min(width)
+    } else {
         return;
     };
+    let y1 = if y >= 0 && y0 < height {
+        (y0 + d as usize).min(height)
+    } else if y < 0 && d as usize > y.unsigned_abs() as usize {
+        (d as usize - y.unsigned_abs() as usize).min(height)
+    } else {
+        return;
+    };
+    if x0 >= x1 || y0 >= y1 {
+        return;
+    }
+    let raster = image.raster_bits_mut();
 
-    for i in 0..d as usize {
-        let Some(start) = i.checked_mul(width).and_then(|v| bp.checked_add(v)) else {
+    for row in y0..y1 {
+        let Some(start) = row.checked_mul(width).and_then(|v| v.checked_add(x0)) else {
             return;
         };
-        let Some(end) = start.checked_add(w as usize) else {
+        let Some(end) = start.checked_add(x1 - x0) else {
             return;
         };
         if end <= raster.len() {
