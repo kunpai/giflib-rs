@@ -172,31 +172,26 @@ pub(crate) fn gif_draw_text8x8(
     legend: &[u8],
     color: c_int,
 ) {
-    if x < 0 || y < 0 {
-        return;
-    }
-
-    let width = image.ImageDesc.Width as usize;
-    let raster = image.raster_bits_mut();
-
     for row in 0..GIF_FONT_HEIGHT {
-        let Some(base_offset) =
-            width.checked_mul(y as usize + row).and_then(|v| v.checked_add(x as usize))
-        else {
-            return;
-        };
-        let mut col = 0usize;
-        for &ch_byte in legend {
-            let ch = (ch_byte & 0x7f) as usize;
+        let row_y = y.wrapping_add(row as c_int);
+        if row_y < 0 {
+            continue;
+        }
+        for (char_index, &ch) in legend.iter().enumerate() {
+            if ch >= 128 {
+                continue;
+            }
+            if char_index > (c_int::MAX / GIF_FONT_WIDTH as c_int) as usize {
+                break;
+            }
+            let glyph_x = x.wrapping_add((char_index * GIF_FONT_WIDTH) as c_int);
+            let glyph = GIF_ASCII_TABLE_8X8[ch as usize][row];
             for j in 0..GIF_FONT_WIDTH {
-                if ((GIF_ASCII_TABLE_8X8[ch][row] as u16) & (1u16 << (GIF_FONT_WIDTH - j))) != 0 {
-                    if let Some(idx) = base_offset.checked_add(col) {
-                        if idx < raster.len() {
-                            raster[idx] = color as GifByteType;
-                        }
+                if glyph & (1 << (GIF_FONT_WIDTH - 1 - j)) != 0 {
+                    if glyph_x <= c_int::MAX - j as c_int {
+                        put_pixel(image, glyph_x + j as c_int, row_y, color);
                     }
                 }
-                col += 1;
             }
         }
     }
