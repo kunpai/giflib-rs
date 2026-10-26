@@ -282,8 +282,7 @@ pub unsafe extern "C" fn DGifGetLine(
     let Some(gif) = gif_file else {
         return GIF_ERROR;
     };
-    let line_len = if line_len == 0 { gif.Image.Width } else { line_len };
-    if line_len < 0 && gif.Private.io.is_readable() {
+    if line_len <= 0 && gif.Private.io.is_readable() {
         return gif.result_to_status(Err(GifError::DDataTooBig));
     }
     let len = line_len.max(0) as usize;
