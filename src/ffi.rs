@@ -197,17 +197,17 @@ pub extern "C" fn DGifCloseFile(
     error: Option<&mut c_int>,
 ) -> c_int {
     match gif_file {
-        Some(gif) if !gif.Private.io.is_readable() => {
-            if let Some(error) = error {
-                *error = GifError::DNotReadable as c_int;
-            }
-            GIF_ERROR
-        }
-        Some(_) => {
+        Some(gif) if gif.Private.io.is_readable() => {
             if let Some(error) = error {
                 *error = D_GIF_SUCCEEDED;
             }
             GIF_OK // Box<GifFileType> drops here, triggering Drop impl.
+        }
+        Some(_) => {
+            if let Some(error) = error {
+                *error = GifError::DNotReadable as c_int;
+            }
+            GIF_ERROR
         }
         None => {
             if let Some(error) = error {
