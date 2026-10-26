@@ -351,20 +351,34 @@ pub fn egif_put_image_desc(
 // ---------------------------------------------------------------------------
 
 /// Matches EGifPutLine in C.
-pub fn egif_put_line(
-    gif: &mut GifFileType,
-    line: &mut [GifPixelType],
-    line_len: c_int,
-) -> Result<(), GifError> {
+pub fn egif_put_line(gif: &mut GifFileType, line: &mut [GifPixelType]) -> Result<(), GifError> {
     if !gif.Private.io.is_writable() {
         return Err(GifError::ENotWriteable);
     }
 
-    if gif.Private.pixel_count < line_len as u32 as usize {
+    // When line is empty, use Image.Width as the length (matching C behavior).
+    // In C, the caller must provide a buffer of at least Width bytes;
+    // here we create a local zero-filled buffer if the input slice is empty.
+    if line.is_empty() {
+        let line_len = gif.Image.Width.max(0) as usize;
+        if gif.Private.pixel_count < line_len {
+            return Err(GifError::EDataTooBig);
+        }
+        gif.Private.pixel_count -= line_len;
+        let mask = encoder_lzw::get_code_mask(gif.Private.lzw.bits_per_pixel);
+        let mut buf = vec![0u8; line_len];
+        for pixel in buf.iter_mut() {
+            *pixel &= mask;
+        }
+        return encoder_lzw::egif_compress_line(gif, &buf);
+    }
+
+    let line_len = line.len();
+
+    if gif.Private.pixel_count < line_len {
         return Err(GifError::EDataTooBig);
     }
-    gif.Private.pixel_count = gif.Private.pixel_count.wrapping_sub(line_len as isize as usize);
-    let line_len = line_len.max(0) as usize;
+    gif.Private.pixel_count -= line_len;
 
     // Make sure the codes are not out of bit range, as we might generate
     // wrong code (because of overflow when we combine them) in this case:
@@ -373,8 +387,7 @@ pub fn egif_put_line(
         line[i] &= mask;
     }
 
-    let first = usize::from(gif.Private.lzw.crnt_code == crate::private_c_types::FIRST_CODE);
-    encoder_lzw::egif_compress_line(gif, &line[..line_len.max(first)])
+    encoder_lzw::egif_compress_line(gif, &line[..line_len])
 }
 
 /// Matches EGifPutPixel in C.
@@ -677,7 +690,7 @@ pub fn egif_spew(gif: &mut GifFileType) -> Result<(), GifError> {
                     let raster_bits = gif.saved_images()[i].raster_bits();
                     let offset = (j as usize) * w;
                     line_buf.copy_from_slice(&raster_bits[offset..offset + w]);
-                    egif_put_line(gif, &mut line_buf, saved_width)?;
+                    egif_put_line(gif, &mut line_buf)?;
                     j += INTERLACED_JUMPS[k];
                 }
             }
@@ -686,7 +699,7 @@ pub fn egif_spew(gif: &mut GifFileType) -> Result<(), GifError> {
                 let raster_bits = gif.saved_images()[i].raster_bits();
                 let offset = (j as usize) * w;
                 line_buf.copy_from_slice(&raster_bits[offset..offset + w]);
-                egif_put_line(gif, &mut line_buf, saved_width)?;
+                egif_put_line(gif, &mut line_buf)?;
             }
         }
     }

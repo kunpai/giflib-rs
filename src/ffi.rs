@@ -933,8 +933,7 @@ pub unsafe extern "C" fn EGifPutImageDesc(
 ///
 /// # Safety
 ///
-/// The caller must guarantee that `line` points to at least `line_len` bytes, or
-/// `Image.Width` bytes when `line_len` is 0, and to at least one byte.
+/// The caller must guarantee that `line` points to at least `line_len` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn EGifPutLine(
     gif_file: Option<&mut GifFileType>,
@@ -944,14 +943,18 @@ pub unsafe extern "C" fn EGifPutLine(
     let Some(gif) = gif_file else {
         return GIF_ERROR;
     };
-    if line.is_null() {
-        return GIF_ERROR;
+    if line_len <= 0 && gif.Private.io.is_writable() {
+        return gif.result_to_status(Err(GifError::EDataTooBig));
     }
-    let line_len = if line_len == 0 { gif.Image.Width } else { line_len };
-    let len = line_len.max(1) as usize;
+    let len = if line_len <= 0 { 0 } else { line_len as usize };
     // SAFETY: caller guarantees `line` points to at least `len` bytes.
-    let line_slice = unsafe { core::slice::from_raw_parts_mut(line, len) };
-    let r = encoder::egif_put_line(gif, line_slice, line_len);
+    // When len is 0, we pass an empty slice; egif_put_line defaults to Image.Width.
+    let line_slice = if len == 0 || line.is_null() {
+        &mut []
+    } else {
+        unsafe { core::slice::from_raw_parts_mut(line, len) }
+    };
+    let r = encoder::egif_put_line(gif, line_slice);
     gif.result_to_status(r)
 }
 
